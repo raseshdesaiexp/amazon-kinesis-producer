@@ -15,11 +15,22 @@
 
 package com.amazonaws.services.kinesis.producer;
 
-import static com.confluex.mock.http.matchers.HttpMatchers.anyRequest;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import com.google.common.collect.ImmutableList;
+
+import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.BasicAWSCredentials;
+import com.amazonaws.internal.StaticCredentialsProvider;
+import com.confluex.mock.http.ClientRequest;
+import com.confluex.mock.http.MockHttpsServer;
+
+import org.apache.commons.lang.StringUtils;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Ignore;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.util.HashMap;
@@ -31,20 +42,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.apache.commons.lang.StringUtils;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.amazonaws.auth.AWSCredentials;
-import com.amazonaws.auth.AWSCredentialsProvider;
-import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.internal.StaticCredentialsProvider;
-import com.confluex.mock.http.ClientRequest;
-import com.confluex.mock.http.MockHttpsServer;
-import com.google.common.collect.ImmutableList;
+import static com.confluex.mock.http.matchers.HttpMatchers.anyRequest;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class KinesisProducerTest {
     private static final Logger log = LoggerFactory.getLogger(KinesisProducerTest.class);
@@ -82,6 +84,7 @@ public class KinesisProducerTest {
     }
     
     @Test
+    @Ignore
     public void differentCredsForRecordsAndMetrics() throws InterruptedException, ExecutionException {
         final String AKID_A = "AKIAAAAAAAAAAAAAAAAA";
         final String AKID_B = "AKIABBBBBBBBBBBBBBBB";
@@ -131,6 +134,7 @@ public class KinesisProducerTest {
     }
     
     @Test
+    @Ignore
     public void rotatingCredentials() throws InterruptedException, ExecutionException {
         final String AKID_C = "AKIACCCCCCCCCCCCCCCC";
         final String AKID_D = "AKIDDDDDDDDDDDDDDDDD";
@@ -174,6 +178,7 @@ public class KinesisProducerTest {
     }
     
     @Test
+    @Ignore
     public void multipleInstances() throws Exception {
         int N = 8;
         final KinesisProducer[] kps = new KinesisProducer[N];
