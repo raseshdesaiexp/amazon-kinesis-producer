@@ -3,3 +3,4 @@
 /third_party
 /java/amazon-kinesis-producer/src/main/resources/amazon-kinesis-producer-native-binaries/**/*
 .idea/
+java/amazon-kinesis-producer/pom.xml.versionsBackup
