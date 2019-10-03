@@ -15,19 +15,31 @@
 
 package com.amazonaws.services.kinesis.producer;
 
+import com.google.common.collect.ImmutableMap;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.SettableFuture;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import com.google.protobuf.ByteString;
+
+import com.amazonaws.services.kinesis.producer.protobuf.Messages;
+import com.amazonaws.services.kinesis.producer.protobuf.Messages.Flush;
+import com.amazonaws.services.kinesis.producer.protobuf.Messages.Message;
+import com.amazonaws.services.kinesis.producer.protobuf.Messages.MetricsRequest;
+import com.amazonaws.services.kinesis.producer.protobuf.Messages.MetricsResponse;
+import com.amazonaws.services.kinesis.producer.protobuf.Messages.PutRecord;
+
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.SystemUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileLock;
 import java.nio.file.Paths;
-import java.security.MessageDigest;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -40,30 +52,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-import javax.xml.bind.DatatypeConverter;
-
-import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.SystemUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.amazonaws.services.kinesis.producer.protobuf.Messages;
-import com.amazonaws.services.kinesis.producer.protobuf.Messages.Flush;
-import com.amazonaws.services.kinesis.producer.protobuf.Messages.Message;
-import com.amazonaws.services.kinesis.producer.protobuf.Messages.MetricsRequest;
-import com.amazonaws.services.kinesis.producer.protobuf.Messages.MetricsResponse;
-import com.amazonaws.services.kinesis.producer.protobuf.Messages.PutRecord;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.google.protobuf.ByteString;
+import static java.lang.String.format;
 
 /**
  * An interface to the native KPL daemon. This class handles the creation,
  * destruction and use of the child process.
- * 
+ *
  * <p>
  * <b>Use a single instance within the application whenever possible:</b>
  * <p>
@@ -79,23 +73,23 @@ import com.google.protobuf.ByteString;
  * multiple instances of KinesisProducer.</li>
  * </ul>
  * <p>
- * 
+ *
  * @author chaodeng
  *
  */
 public class KinesisProducer implements IKinesisProducer {
     private static final Logger log = LoggerFactory.getLogger(KinesisProducer.class);
-    
+
     private static final BigInteger UINT_128_MAX = new BigInteger(StringUtils.repeat("FF", 16), 16);
     private static final Object EXTRACT_BIN_MUTEX = new Object();
-    
+
     private static final AtomicInteger callbackCompletionPoolNumber = new AtomicInteger(0);
-    
+
     private final KinesisProducerConfiguration config;
     private final Map<String, String> env;
     private final AtomicLong messageNumber = new AtomicLong(1);
     private final Map<Long, SettableFuture<?>> futures = new ConcurrentHashMap<>();
-      
+
     private final ExecutorService callbackCompletionExecutor = new ThreadPoolExecutor(
             1,
             Runtime.getRuntime().availableProcessors() * 4,
@@ -122,7 +116,7 @@ public class KinesisProducer implements IKinesisProducer {
     private String pathToExecutable;
     private String pathToLibDir;
     private String pathToTmpDir;
-    
+
     private volatile Daemon child;
     private volatile long lastChild = System.nanoTime();
     private volatile boolean destroyed = false;
@@ -177,15 +171,15 @@ public class KinesisProducer implements IKinesisProducer {
                 }
             }
         }
-  
+
         /**
          * Matches up the incoming PutRecordResult to an outstanding future, and
          * completes that future with the appropriate data.
-         * 
+         *
          * <p>
          * We adapt the protobuf PutRecordResult to another simpler
          * PutRecordResult class to hide the protobuf stuff from the user.
-         * 
+         *
          * @param msg
          */
         private void onPutRecordResult(Message msg) {
@@ -197,19 +191,19 @@ public class KinesisProducer implements IKinesisProducer {
                 f.setException(new UserRecordFailedException(result));
             }
         }
-        
+
         private void onMetricsResponse(Message msg) {
             SettableFuture<List<Metric>> f = getFuture(msg);
-            
+
             List<Metric> userMetrics = new ArrayList<>();
             MetricsResponse res = msg.getMetricsResponse();
             for (Messages.Metric metric : res.getMetricsList()) {
                 userMetrics.add(new Metric(metric));
             }
-            
+
             f.set(userMetrics);
         }
-        
+
         private <T> SettableFuture<T> getFuture(Message msg) {
             long id = msg.getSourceId();
             @SuppressWarnings("unchecked")
@@ -220,64 +214,65 @@ public class KinesisProducer implements IKinesisProducer {
             return f;
         }
     }
-    
+
     /**
      * Start up a KinesisProducer instance.
-     * 
+     *
      * <p>
      * Since this creates a child process, it is fairly expensive. Avoid
      * creating more than one per application, unless putting to multiple
      * regions at the same time. All streams in the same region can share the
      * same instance.
-     * 
+     *
      * <p>
      * All methods in KinesisProducer are thread-safe.
-     * 
+     *
      * @param config
      *            Configuration for the KinesisProducer. See the docs for that
      *            class for details.
-     * 
+     *
      * @see KinesisProducerConfiguration
      */
     public KinesisProducer(KinesisProducerConfiguration config) {
+        log.info("loggerType=kpl action=initializeKinesisProducer config={}", config.toString());
         this.config = config;
-        
+
         String caDirectory = extractBinaries();
-        
+
         env = new ImmutableMap.Builder<String, String>()
                 .put("LD_LIBRARY_PATH", pathToLibDir)
                 .put("DYLD_LIBRARY_PATH", pathToLibDir)
                 .put("CA_DIR", caDirectory)
                 .build();
-        
+
         child = new Daemon(pathToExecutable, new MessageHandler(), pathToTmpDir, config, env);
     }
-    
+
     /**
      * Start up a KinesisProducer instance.
-     * 
+     *
      * <p>
      * Since this creates a child process, it is fairly expensive. Avoid
      * creating more than one per application, unless putting to multiple
      * regions at the same time. All streams in the same region can share the
      * same instance.
-     * 
+     *
      * <p>
      * The KPL will use a set of default configurations. You can set custom
      * configuration using the constructor that takes a {@link KinesisProducerConfiguration}
      * object.
-     * 
+     *
      * <p>
      * All methods in KinesisProducer are thread-safe.
      */
     public KinesisProducer() {
         this(new KinesisProducerConfiguration());
     }
-    
+
     /**
      * Connect to a running daemon. Does not start a child process. Used for
      * testing.
-     * 
+     *
      * @param inPipe
      * @param outPipe
      */
@@ -286,12 +281,12 @@ public class KinesisProducer implements IKinesisProducer {
         this.env = null;
         child = new Daemon(inPipe, outPipe, new MessageHandler());
     }
-    
+
     /**
      * Put a record asynchronously. A {@link ListenableFuture} is returned that
      * can be used to retrieve the result, either by polling or by registering a
      * callback.
-     * 
+     *
      * <p>
      * The return value can be disregarded if you do not wish to process the
      * result. Under the covers, the KPL will automatically re-attempt puts in
@@ -301,7 +296,7 @@ public class KinesisProducer implements IKinesisProducer {
      *
      * <p>
      * <b>Thread safe.</b>
-     * 
+     *
      * <p>
      * To add a listener to the future:
      * <p>
@@ -326,7 +321,7 @@ public class KinesisProducer implements IKinesisProducer {
      * <p>
      * Another option would be to hand the result off to a different component
      * for processing and keep the callback routine fast.
-     * 
+     *
      * @param stream
      *            Stream to put to.
      * @param partitionKey
@@ -346,6 +341,8 @@ public class KinesisProducer implements IKinesisProducer {
      */
     @Override
     public ListenableFuture<UserRecordResult> addUserRecord(String stream, String partitionKey, ByteBuffer data) {
+        log.info("loggerType=kpl action=addUserRecord partitionId=false stream={} partitionKey={}", stream,
+                 partitionKey);
         return addUserRecord(stream, partitionKey, null, data);
     }
 
@@ -410,7 +407,7 @@ public class KinesisProducer implements IKinesisProducer {
      * Put a record asynchronously. A {@link ListenableFuture} is returned that
      * can be used to retrieve the result, either by polling or by registering a
      * callback.
-     * 
+     *
      * <p>
      * The return value can be disregarded if you do not wish to process the
      * result. Under the covers, the KPL will automatically reattempt puts in
@@ -420,7 +417,7 @@ public class KinesisProducer implements IKinesisProducer {
      *
      * <p>
      * <b>Thread safe.</b>
-     * 
+     *
      * <p>
      * To add a listener to the future:
      * <p>
@@ -445,7 +442,7 @@ public class KinesisProducer implements IKinesisProducer {
      * <p>
      * Another option would be to hand the result off to a different component
      * for processing and keep the callback routine fast.
-     * 
+     *
      * @param stream
      *            Stream to put to.
      * @param partitionKey
@@ -470,57 +467,74 @@ public class KinesisProducer implements IKinesisProducer {
      */
     @Override
     public ListenableFuture<UserRecordResult> addUserRecord(String stream, String partitionKey, String explicitHashKey, ByteBuffer data) {
+        log.info("loggerType=kpl action=addUserRecord partitionId=true stream={} partitionKey={}, explicitHashKey={}",
+                 stream, partitionKey, explicitHashKey);
         if (stream == null) {
-            throw new IllegalArgumentException("Stream name cannot be null");
+            String errorMessage = "Stream name cannot be null";
+            log.error("loggerType=kpl errorMessage={}", errorMessage);
+            throw new IllegalArgumentException(errorMessage);
         }
-        
+
         stream = stream.trim();
-        
+
         if (stream.length() == 0) {
-            throw new IllegalArgumentException("Stream name cannot be empty");
+            String errorMessage = "Stream name cannot be empty";
+            log.error("loggerType=kpl errorMessage={}", errorMessage);
+            throw new IllegalArgumentException(errorMessage);
         }
-        
+
         if (partitionKey == null) {
-            throw new IllegalArgumentException("partitionKey cannot be null");
+            String errorMessage = "partitionKey cannot be null";
+            log.error("loggerType=kpl errorMessage={}", errorMessage);
+            throw new IllegalArgumentException(errorMessage);
         }
-        
+
         if (partitionKey.length() < 1 || partitionKey.length() > 256) {
-            throw new IllegalArgumentException(
-                    "Invalid partition key. Length must be at least 1 and at most 256, got " + partitionKey.length());
+            String errorMessage = format("Invalid partition key. Length must be at least 1 and at most 256, got %d",
+                                         partitionKey.length());
+            log.error("loggerType=kpl errorMessage={}", errorMessage);
+            throw new IllegalArgumentException(errorMessage);
         }
-        
+
         try {
             partitionKey.getBytes("UTF-8");
         } catch (Exception e) {
-            throw new IllegalArgumentException("Partition key must be valid UTF-8");
+            String errorMessage = "Partition key must be valid UTF-8";
+            log.error("loggerType=kpl errorMessage={}", errorMessage);
+            throw new IllegalArgumentException(errorMessage);
         }
-        
+
         BigInteger b = null;
         if (explicitHashKey != null) {
             explicitHashKey = explicitHashKey.trim();
             try {
                 b = new BigInteger(explicitHashKey);
             } catch (NumberFormatException e) {
-                throw new IllegalArgumentException("Invalid explicitHashKey, must be an integer, got " + explicitHashKey);
+                String errorMessage = format("Invalid explicitHashKey, must be an integer, got %s", explicitHashKey);
+                log.error("loggerType=kpl errorMessage={}", errorMessage);
+                throw new IllegalArgumentException(errorMessage);
             }
             if (b != null) {
                 if (b.compareTo(UINT_128_MAX) > 0 || b.compareTo(BigInteger.ZERO) < 0) {
-                    throw new IllegalArgumentException(
-                            "Invalid explicitHashKey, must be greater or equal to zero and less than or equal to (2^128 - 1), got " +
-                                    explicitHashKey);
+                    String errorMessage = format("Invalid explicitHashKey, must be greater or equal to zero and less " +
+                                              "than or equal to (2^128 - 1), got %s", explicitHashKey);
+                    log.error("loggerType=kpl errorMessage={}", errorMessage);
+                    throw new IllegalArgumentException(errorMessage);
                 }
             }
         }
-        
+
         if (data != null && data.remaining() > 1024 * 1024) {
-            throw new IllegalArgumentException(
-                    "Data must be less than or equal to 1MB in size, got " + data.remaining() + " bytes");
+            String errorMessage = format("Data must be less than or equal to 1MB in size, got %d bytes",
+                                         data.remaining());
+            log.error(errorMessage);
+            throw new IllegalArgumentException(errorMessage);
         }
-        
+
         long id = messageNumber.getAndIncrement();
         SettableFuture<UserRecordResult> f = SettableFuture.create();
         futures.put(id, f);
-        
+
         PutRecord.Builder pr = PutRecord.newBuilder()
                 .setStreamName(stream)
                 .setPartitionKey(partitionKey)
@@ -528,52 +542,53 @@ public class KinesisProducer implements IKinesisProducer {
         if (b != null) {
             pr.setExplicitHashKey(b.toString(10));
         }
-        
+
         Message m = Message.newBuilder()
                 .setId(id)
                 .setPutRecord(pr.build())
                 .build();
+        log.info("loggerType=kpl action=childAdd messageNumber={}", id);
         child.add(m);
-        
+
         return f;
     }
-    
+
     /**
      * Get the number of unfinished records currently being processed. The
      * records could either be waiting to be sent to the child process, or have
      * reached the child process and are being worked on.
-     * 
+     *
      * <p>
      * This is equal to the number of futures returned from {@link #addUserRecord}
      * that have not finished.
-     * 
+     *
      * @return The number of unfinished records currently being processed.
      */
     @Override
     public int getOutstandingRecordsCount() {
         return futures.size();
     }
-    
+
     /**
      * Get metrics from the KPL.
-     * 
+     *
      * <p>
      * The KPL computes and buffers useful metrics. Use this method to retrieve
      * them. The same metrics are also uploaded to CloudWatch (unless disabled).
-     * 
+     *
      * <p>
      * Multiple metrics exist for the same name, each with a different list of
      * dimensions (e.g. stream name). This method will fetch all metrics with
      * the provided name.
-     * 
+     *
      * <p>
      * See the stand-alone metrics documentation for details about individual
      * metrics.
-     * 
+     *
      * <p>
      * This method is synchronous and will block while the data is being
      * retrieved.
-     * 
+     *
      * @param metricName
      *            Name of the metrics to fetch.
      * @param windowSeconds
@@ -599,44 +614,44 @@ public class KinesisProducer implements IKinesisProducer {
         if (windowSeconds > 0) {
             mrb.setSeconds(windowSeconds);
         }
-        
+
         long id = messageNumber.getAndIncrement();
         SettableFuture<List<Metric>> f = SettableFuture.create();
         futures.put(id, f);
-        
+
         child.add(Message.newBuilder()
                 .setId(id)
                 .setMetricsRequest(mrb.build())
                 .build());
-        
+
         return f.get();
     }
-    
+
     /**
      * Get metrics from the KPL.
-     * 
+     *
      * <p>
      * The KPL computes and buffers useful metrics. Use this method to retrieve
      * them. The same metrics are also uploaded to CloudWatch (unless disabled).
-     * 
+     *
      * <p>
      * Multiple metrics exist for the same name, each with a different list of
      * dimensions (e.g. stream name). This method will fetch all metrics with
      * the provided name.
-     * 
+     *
      * <p>
      * The retrieved data represents cumulative statistics since the start of
      * the program. To get data from a smaller window, use
      * {@link #getMetrics(String, int)}.
-     * 
+     *
      * <p>
      * See the stand-alone metrics documentation for details about individual
      * metrics.
-     * 
+     *
      * <p>
      * This method is synchronous and will block while the data is being
      * retrieved.
-     * 
+     *
      * @param metricName
      *            Name of the metrics to fetch.
      * @return A list of metrics with the provided name.
@@ -652,31 +667,31 @@ public class KinesisProducer implements IKinesisProducer {
     public List<Metric> getMetrics(String metricName) throws InterruptedException, ExecutionException {
         return getMetrics(metricName, -1);
     }
-    
+
     /**
      * Get metrics from the KPL.
-     * 
+     *
      * <p>
      * The KPL computes and buffers useful metrics. Use this method to retrieve
      * them. The same metrics are also uploaded to CloudWatch (unless disabled).
-     * 
+     *
      * <p>
      * This method fetches all metrics available. To fetch only metrics with a
      * given name, use {@link #getMetrics(String)}.
-     * 
+     *
      * <p>
      * The retrieved data represents cumulative statistics since the start of
      * the program. To get data from a smaller window, use
      * {@link #getMetrics(int)}.
-     * 
+     *
      * <p>
      * See the stand-alone metrics documentation for details about individual
      * metrics.
-     * 
+     *
      * <p>
      * This method is synchronous and will block while the data is being
      * retrieved.
-     * 
+     *
      * @return A list of all of the metrics maintained by the KPL.
       * @throws ExecutionException
      *             If an error occurred while fetching metrics from the child
@@ -690,26 +705,26 @@ public class KinesisProducer implements IKinesisProducer {
     public List<Metric> getMetrics() throws InterruptedException, ExecutionException {
         return getMetrics(null);
     }
-    
+
     /**
      * Get metrics from the KPL.
-     * 
+     *
      * <p>
      * The KPL computes and buffers useful metrics. Use this method to retrieve
      * them. The same metrics are also uploaded to CloudWatch (unless disabled).
-     * 
+     *
      * <p>
      * This method fetches all metrics available. To fetch only metrics with a
      * given name, use {@link #getMetrics(String, int)}.
-     * 
+     *
      * <p>
      * See the stand-alone metrics documentation for details about individual
      * metrics.
-     * 
+     *
      * <p>
      * This method is synchronous and will block while the data is being
      * retrieved.
-     * 
+     *
      * @param windowSeconds
      *            Fetch data from the last N seconds. The KPL maintains data at
      *            per second granularity for the past minute. To get total
@@ -732,10 +747,10 @@ public class KinesisProducer implements IKinesisProducer {
     /**
      * Immediately kill the child process. This will cause all outstanding
      * futures to fail immediately.
-     * 
+     *
      * <p>
      * To perform a graceful shutdown instead, there are several options:
-     * 
+     *
      * <ul>
      * <li>Call {@link #flush()} and wait (perhaps with a time limit) for all
      * futures. If you were sending a very high volume of data you may need to
@@ -743,7 +758,7 @@ public class KinesisProducer implements IKinesisProducer {
      * <li>Poll {@link #getOutstandingRecordsCount()} until it returns 0.</li>
      * <li>Call {@link #flushSync()}, which blocks until completion.</li>
      * </ul>
-     * 
+     *
      * Once all records are confirmed with one of the above, call destroy to
      * terminate the child process. If you are terminating the JVM then calling
      * destroy is unnecessary since it will be done automatically.
@@ -758,15 +773,15 @@ public class KinesisProducer implements IKinesisProducer {
     /**
      * Instruct the child process to perform a flush, sending some of the
      * records it has buffered for the specified stream.
-     * 
+     *
      * <p>
      * This does not guarantee that all buffered records will be sent, only that
      * most of them will; to flush all records and wait for completion, use
      * {@link #flushSync}.
-     * 
+     *
      * <p>
      * This method returns immediately without blocking.
-     * 
+     *
      * @param stream
      *            Stream to flush
      * @throws DaemonException
@@ -788,15 +803,15 @@ public class KinesisProducer implements IKinesisProducer {
     /**
      * Instruct the child process to perform a flush, sending some of the
      * records it has buffered. Applies to all streams.
-     * 
+     *
      * <p>
      * This does not guarantee that all buffered records will be sent, only that
      * most of them will; to flush all records and wait for completion, use
      * {@link #flushSync}.
-     * 
+     *
      * <p>
      * This method returns immediately without blocking.
-     * 
+     *
      * @throws DaemonException
      *             if the child process is dead
      */
@@ -804,24 +819,24 @@ public class KinesisProducer implements IKinesisProducer {
     public void flush() {
         flush(null);
     }
-    
+
     /**
      * Instructs the child process to flush all records and waits until all
      * records are complete (either succeeding or failing).
-     * 
+     *
      * <p>
      * The wait includes any retries that need to be performed. Depending on
      * your configuration of record TTL and request timeout, this can
      * potentially take a long time if the library is having trouble delivering
-     * records to the backend, for example due to network problems. 
-     * 
+     * records to the backend, for example due to network problems.
+     *
      * <p>
      * This is useful if you need to shutdown your application and want to make
      * sure all records are delivered before doing so.
-     * 
+     *
      * @throws DaemonException
      *             if the child process is dead
-     * 
+     *
      * @see KinesisProducerConfiguration#setRecordTtl(long)
      * @see KinesisProducerConfiguration#setRequestTimeout(long)
      */
@@ -849,7 +864,7 @@ public class KinesisProducer implements IKinesisProducer {
                 throw new RuntimeException("Your operation system is not supported (" +
                         os + "), the KPL only supports Linux, OSX and Windows");
             }
-            
+
             String root = "amazon-kinesis-producer-native-binaries";
             String tmpDir = config.getTempDirectory();
             if (tmpDir.trim().length() == 0) {
@@ -857,7 +872,7 @@ public class KinesisProducer implements IKinesisProducer {
             }
             tmpDir = Paths.get(tmpDir, root).toString();
             pathToTmpDir = tmpDir;
-            
+
             String binPath = config.getNativeExecutable();
             if (binPath != null && !binPath.trim().isEmpty()) {
                 pathToExecutable = binPath.trim();
@@ -884,7 +899,7 @@ public class KinesisProducer implements IKinesisProducer {
                     if (!tmpDirFile.exists() && !tmpDirFile.mkdirs()) {
                         throw new IOException("Could not create tmp dir " + tmpDir);
                     }
-                    
+
                     String extension = os.equals("windows") ? ".exe" : "";
                     String executableName = "kinesis_producer" + extension;
 

@@ -15,6 +15,15 @@
 
 package com.amazonaws.services.kinesis.producer;
 
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
+import com.amazonaws.services.kinesis.producer.protobuf.Config.AdditionalDimension;
+import com.amazonaws.services.kinesis.producer.protobuf.Config.Configuration;
+import com.amazonaws.services.kinesis.producer.protobuf.Messages.Message;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.lang.reflect.Method;
@@ -24,19 +33,13 @@ import java.util.List;
 import java.util.Properties;
 import java.util.regex.Pattern;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.amazonaws.auth.AWSCredentialsProvider;
-import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
-import com.amazonaws.services.kinesis.producer.protobuf.Config.AdditionalDimension;
-import com.amazonaws.services.kinesis.producer.protobuf.Config.Configuration;
-import com.amazonaws.services.kinesis.producer.protobuf.Messages.Message;
+import lombok.ToString;
 
 /**
  * Configuration for {@link KinesisProducer}. See each each individual set
  * method for details about each parameter.
  */
+@ToString
 public class KinesisProducerConfiguration {
     private static final Logger log = LoggerFactory.getLogger(KinesisProducerConfiguration.class);
 
