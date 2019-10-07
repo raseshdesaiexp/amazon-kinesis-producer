@@ -27,6 +27,7 @@ import com.amazonaws.services.kinesis.producer.protobuf.Messages.Message;
 import com.amazonaws.services.kinesis.producer.protobuf.Messages.MetricsRequest;
 import com.amazonaws.services.kinesis.producer.protobuf.Messages.MetricsResponse;
 import com.amazonaws.services.kinesis.producer.protobuf.Messages.PutRecord;
+import com.amazonaws.services.kinesis.producer.util.KplTraceLog;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.SystemUtils;
@@ -340,6 +341,7 @@ public class KinesisProducer implements IKinesisProducer {
      * @see UserRecordFailedException
      */
     @Override
+    @KplTraceLog
     public ListenableFuture<UserRecordResult> addUserRecord(String stream, String partitionKey, ByteBuffer data) {
         log.info("loggerType=kpl action=addUserRecord partitionId=false stream={} partitionKey={}", stream,
                  partitionKey);
@@ -399,6 +401,7 @@ public class KinesisProducer implements IKinesisProducer {
      * @see UserRecordFailedException
      */
     @Override
+    @KplTraceLog
     public ListenableFuture<UserRecordResult> addUserRecord(UserRecord userRecord) {
         return addUserRecord(userRecord.getStreamName(), userRecord.getPartitionKey(), userRecord.getExplicitHashKey(), userRecord.getData());
     }
@@ -466,6 +469,7 @@ public class KinesisProducer implements IKinesisProducer {
      * @see UserRecordFailedException
      */
     @Override
+    @KplTraceLog
     public ListenableFuture<UserRecordResult> addUserRecord(String stream, String partitionKey, String explicitHashKey, ByteBuffer data) {
         log.info("loggerType=kpl action=addUserRecord partitionId=true stream={} partitionKey={}, explicitHashKey={}",
                  stream, partitionKey, explicitHashKey);
