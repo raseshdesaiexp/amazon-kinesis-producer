@@ -14,6 +14,12 @@
  */
 package com.amazonaws.services.kinesis.producer;
 
+import com.amazonaws.services.kinesis.producer.util.KplTraceLog;
+
+import org.apache.commons.io.IOUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -27,10 +33,6 @@ import java.util.Arrays;
 
 import javax.xml.bind.DatatypeConverter;
 
-import org.apache.commons.io.IOUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 public class HashedFileCopier {
     private static final Logger log = LoggerFactory.getLogger(HashedFileCopier.class);
 
@@ -39,6 +41,7 @@ public class HashedFileCopier {
     static final String TEMP_SUFFIX = ".tmp";
     static final String LOCK_SUFFIX = ".lock";
 
+    @KplTraceLog
     public static File copyFileFrom(InputStream sourceData, File destinationDirectory, String fileNameFormat)
             throws Exception {
         File tempFile = null;

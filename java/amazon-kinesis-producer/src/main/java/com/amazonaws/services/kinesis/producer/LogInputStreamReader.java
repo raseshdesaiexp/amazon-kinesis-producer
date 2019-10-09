@@ -15,6 +15,13 @@
 
 package com.amazonaws.services.kinesis.producer;
 
+import com.amazonaws.services.kinesis.producer.util.KplTraceLog;
+
+import org.apache.commons.io.Charsets;
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -25,11 +32,6 @@ import java.util.LinkedList;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import org.apache.commons.io.Charsets;
-import org.apache.commons.lang.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class LogInputStreamReader implements Runnable {
 
@@ -105,6 +107,7 @@ public class LogInputStreamReader implements Runnable {
     }
 
     @Override
+    @KplTraceLog
     public void run() {
         while (running) {
             String logLine;
@@ -196,10 +199,12 @@ public class LogInputStreamReader implements Runnable {
         return StringUtils.join(messageData, "\n");
     }
 
+    @KplTraceLog
     public void shutdown() {
         this.running = false;
     }
 
+    @KplTraceLog
     public void prepareForShutdown() {
         this.shuttingDown = true;
     }

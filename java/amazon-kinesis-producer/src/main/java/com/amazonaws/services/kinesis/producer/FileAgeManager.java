@@ -15,6 +15,7 @@
 package com.amazonaws.services.kinesis.producer;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
