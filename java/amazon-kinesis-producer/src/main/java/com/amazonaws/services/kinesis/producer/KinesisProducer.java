@@ -270,6 +270,10 @@ public class KinesisProducer implements IKinesisProducer {
         this(new KinesisProducerConfiguration());
     }
 
+    public Daemon getChild() {
+        return child;
+    }
+
     /**
      * Connect to a running daemon. Does not start a child process. Used for
      * testing.

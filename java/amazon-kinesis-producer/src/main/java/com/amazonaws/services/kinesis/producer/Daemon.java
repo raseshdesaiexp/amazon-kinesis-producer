@@ -15,6 +15,20 @@
 
 package com.amazonaws.services.kinesis.producer;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import com.google.protobuf.ByteString;
+
+import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.AWSSessionCredentials;
+import com.amazonaws.services.kinesis.producer.protobuf.Messages;
+import com.amazonaws.services.kinesis.producer.protobuf.Messages.Message;
+
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.SystemUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -38,19 +52,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.xml.bind.DatatypeConverter;
-
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.SystemUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.amazonaws.auth.AWSCredentials;
-import com.amazonaws.auth.AWSCredentialsProvider;
-import com.amazonaws.auth.AWSSessionCredentials;
-import com.amazonaws.services.kinesis.producer.protobuf.Messages;
-import com.amazonaws.services.kinesis.producer.protobuf.Messages.Message;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.google.protobuf.ByteString;
 
 /**
  * This class manages the child process. It takes cares of starting the process,
@@ -165,7 +166,11 @@ public class Daemon {
             fatalError("Could not connect to child", e, false);
         }
     }
-    
+
+    public Process getProcess() {
+        return process;
+    }
+
     /**
      * Enqueue a message to be sent to the child process.
      * 
