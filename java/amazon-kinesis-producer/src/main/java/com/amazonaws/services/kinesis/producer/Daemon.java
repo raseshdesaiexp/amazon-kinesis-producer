@@ -23,7 +23,6 @@ import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.auth.AWSSessionCredentials;
 import com.amazonaws.services.kinesis.producer.protobuf.Messages;
 import com.amazonaws.services.kinesis.producer.protobuf.Messages.Message;
-import com.amazonaws.services.kinesis.producer.util.KplTraceLog;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.SystemUtils;
@@ -177,7 +176,6 @@ public class Daemon {
      * 
      * @param m
      */
-    @KplTraceLog
     public void add(Message m) {
         if (shutdown.get()) {
             throw new DaemonException(
@@ -195,7 +193,6 @@ public class Daemon {
      * Immediately kills the child process and shuts down the threads in this
      * Daemon.
      */
-    @KplTraceLog
     public void destroy() {
         fatalError("Destroy is called", false);
     }
@@ -248,7 +245,6 @@ public class Daemon {
      * available on the socket, or there if there are not enough bytes to form a
      * complete message, this method blocks until there is.
      */
-    @KplTraceLog
     private void receiveMessage() {
         try {
             // Read message length (4 bytes)
@@ -274,7 +270,6 @@ public class Daemon {
      * Invokes the message handler, giving it a message received from the child
      * process.
      */
-    @KplTraceLog
     private void returnMessage() {
         try {
             Message m = incomingMessages.take();
@@ -294,7 +289,6 @@ public class Daemon {
      * Start up the loops that continuously send and receive messages to and
      * from the child process.
      */
-    @KplTraceLog
     private void startLoops() {
         executor.execute(new Runnable() {
             @Override
@@ -350,8 +344,7 @@ public class Daemon {
             }
         });
     }
-
-    @KplTraceLog
+    
     private void connectToChild() throws IOException {
         long start = System.nanoTime();
         while (true) {
@@ -376,8 +369,7 @@ public class Daemon {
             }
         }
     }
-
-    @KplTraceLog
+   
     private void createPipes() throws IOException {
         if (SystemUtils.IS_OS_WINDOWS) {
             createPipesWindows();
@@ -388,8 +380,7 @@ public class Daemon {
         inPipe.deleteOnExit();
         outPipe.deleteOnExit();
     }
-
-    @KplTraceLog
+    
     private void createPipesWindows() {
         do {
             inPipe = Paths.get("\\\\.\\pipe\\amz-aws-kpl-in-pipe-" + uuid8Chars()).toFile();
@@ -399,8 +390,7 @@ public class Daemon {
             outPipe = Paths.get("\\\\.\\pipe\\amz-aws-kpl-out-pipe-" + uuid8Chars()).toFile();
         } while (outPipe.exists());
     }
-
-    @KplTraceLog
+    
     private void createPipesUnix() {
         File dir = new File(this.workingDir);
         if (!dir.exists()) {
@@ -435,8 +425,7 @@ public class Daemon {
             }
         }
     }
-
-    @KplTraceLog
+    
     private void deletePipes() {
         try {
             inChannel.close();
@@ -445,8 +434,7 @@ public class Daemon {
             outPipe.delete();
         } catch (Exception e) { }
     }
-
-    @KplTraceLog
+    
     private void startChildProcess() throws IOException, InterruptedException {
         List<String> args = new ArrayList<>(Arrays.asList(pathToExecutable, "-o", outPipe.getAbsolutePath(), "-i",
                 inPipe.getAbsolutePath(), "-c", protobufToHex(config.toProtobufMessage()), "-k",
@@ -508,7 +496,7 @@ public class Daemon {
             deletePipes();
         }
     }
-
+    
     private void updateCredentials() throws InterruptedException {
         outgoingMessages.put(makeSetCredentialsMessage(config.getCredentialsProvider(), false));
         AWSCredentialsProvider metricsCreds = config.getMetricsCredentialsProvider();
@@ -517,23 +505,19 @@ public class Daemon {
         }
         outgoingMessages.put(makeSetCredentialsMessage(metricsCreds, true));
     }
-
-    @KplTraceLog
+    
     private void fatalError(String message) {
         fatalError(message, true);
     }
-
-    @KplTraceLog
+    
     private void fatalError(String message, boolean retryable) {
         fatalError(message, null, retryable);
     }
-
-    @KplTraceLog
+    
     private synchronized void fatalError(String message, Throwable t) {
         fatalError(message, t, true);
     }
-
-    @KplTraceLog
+    
     private synchronized void fatalError(String message, Throwable t, boolean retryable) {
         if (!shutdown.getAndSet(true)) {
             if (process != null) {
@@ -562,8 +546,7 @@ public class Daemon {
             }
         }
     }
-
-    @KplTraceLog
+    
     private void readSome(int n) throws IOException {
         rcvBuf.rewind();
         rcvBuf.limit(n);
@@ -578,8 +561,7 @@ public class Daemon {
         }
         rcvBuf.rewind();
     }
-
-    @KplTraceLog
+    
     private static String uuid8Chars() {
         return UUID.randomUUID().toString().substring(0, 8);
     }
@@ -604,8 +586,7 @@ public class Daemon {
             .setId(Long.MAX_VALUE)
             .build();
     }
-
-    @KplTraceLog
+    
     private static String protobufToHex(com.google.protobuf.Message msg) {
         return DatatypeConverter.printHexBinary(msg.toByteArray());
     }

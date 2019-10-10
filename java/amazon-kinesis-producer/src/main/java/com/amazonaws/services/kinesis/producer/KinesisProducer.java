@@ -125,7 +125,6 @@ public class KinesisProducer implements IKinesisProducer {
 
     private class MessageHandler implements Daemon.MessageHandler {
         @Override
-        @KplTraceLog
         public void onMessage(final Message m) {
             callbackCompletionExecutor.execute(new Runnable() {
                 @Override
@@ -142,7 +141,6 @@ public class KinesisProducer implements IKinesisProducer {
         }
 
         @Override
-        @KplTraceLog
         public void onError(final Throwable t) {
             // Don't log error if the user called destroy
             if (!destroyed) {
@@ -185,7 +183,6 @@ public class KinesisProducer implements IKinesisProducer {
          *
          * @param msg
          */
-        @KplTraceLog
         private void onPutRecordResult(Message msg) {
             SettableFuture<UserRecordResult> f = getFuture(msg);
             UserRecordResult result = UserRecordResult.fromProtobufMessage(msg.getPutRecordResult());
@@ -196,7 +193,6 @@ public class KinesisProducer implements IKinesisProducer {
             }
         }
 
-        @KplTraceLog
         private void onMetricsResponse(Message msg) {
             SettableFuture<List<Metric>> f = getFuture(msg);
 
@@ -209,7 +205,6 @@ public class KinesisProducer implements IKinesisProducer {
             f.set(userMetrics);
         }
 
-        @KplTraceLog
         private <T> SettableFuture<T> getFuture(Message msg) {
             long id = msg.getSourceId();
             @SuppressWarnings("unchecked")
@@ -619,7 +614,6 @@ public class KinesisProducer implements IKinesisProducer {
      * @see Metric
      */
     @Override
-    @KplTraceLog
     public List<Metric> getMetrics(String metricName, int windowSeconds) throws InterruptedException, ExecutionException {
         MetricsRequest.Builder mrb = MetricsRequest.newBuilder();
         if (metricName != null) {
@@ -678,7 +672,6 @@ public class KinesisProducer implements IKinesisProducer {
      * @see Metric
      */
     @Override
-    @KplTraceLog
     public List<Metric> getMetrics(String metricName) throws InterruptedException, ExecutionException {
         return getMetrics(metricName, -1);
     }
@@ -717,7 +710,6 @@ public class KinesisProducer implements IKinesisProducer {
      * @see Metric
      */
     @Override
-    @KplTraceLog
     public List<Metric> getMetrics() throws InterruptedException, ExecutionException {
         return getMetrics(null);
     }
@@ -756,7 +748,6 @@ public class KinesisProducer implements IKinesisProducer {
      * @see Metric
      */
     @Override
-    @KplTraceLog
     public List<Metric> getMetrics(int windowSeconds) throws InterruptedException, ExecutionException {
         return getMetrics(null, windowSeconds);
     }
@@ -781,7 +772,6 @@ public class KinesisProducer implements IKinesisProducer {
      * destroy is unnecessary since it will be done automatically.
      */
     @Override
-    @KplTraceLog
     public void destroy() {
         destroyed = true;
         this.callbackCompletionExecutor.shutdownNow();
@@ -806,7 +796,6 @@ public class KinesisProducer implements IKinesisProducer {
      *             if the child process is dead
      */
     @Override
-    @KplTraceLog
     public void flush(String stream) {
         Flush.Builder f = Flush.newBuilder();
         if (stream != null) {
@@ -835,7 +824,6 @@ public class KinesisProducer implements IKinesisProducer {
      *             if the child process is dead
      */
     @Override
-    @KplTraceLog
     public void flush() {
         flush(null);
     }
@@ -861,7 +849,6 @@ public class KinesisProducer implements IKinesisProducer {
      * @see KinesisProducerConfiguration#setRequestTimeout(long)
      */
     @Override
-    @KplTraceLog
     public void flushSync() {
         while (getOutstandingRecordsCount() > 0) {
             flush();
