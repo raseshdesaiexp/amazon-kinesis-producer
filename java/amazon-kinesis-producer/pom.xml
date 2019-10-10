@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.amazonaws</groupId>
     <artifactId>amazon-kinesis-producer</artifactId>
-    <version>0.13.1</version>
+    <version>0.13.1.EXP-6</version>
     <name>Amazon Kinesis Producer Library</name>
 
     <scm>
@@ -14,14 +14,27 @@
 
     <url>https://aws.amazon.com/kinesis</url>
 
+    <distributionManagement>
+        <repository>
+            <id>lct-maven-release-local</id>
+            <name>Internal Releases</name>
+            <url>https://artylab.expedia.biz/lct-maven-release-local/</url>
+        </repository>
+        <snapshotRepository>
+            <id>lct-maven-snapshot-local</id>
+            <name>Expedia</name>
+            <url>https://artylab.expedia.biz/lct-maven-snapshot-local/</url>
+        </snapshotRepository>
+    </distributionManagement>
+
     <build>
         <plugins>
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.1</version>
                 <configuration>
-                    <source>1.7</source>
-                    <target>1.7</target>
+                    <source>1.8</source>
+                    <target>1.8</target>
                 </configuration>
             </plugin>
             <plugin>
@@ -86,6 +99,14 @@
             <artifactId>commons-lang</artifactId>
             <version>2.6</version>
         </dependency>
+        <!-- Adding lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.10</version>
+            <scope>provided</scope>
+        </dependency>
+
         <dependency>
             <groupId>com.amazonaws</groupId>
             <artifactId>aws-java-sdk-core</artifactId>
