@@ -141,6 +141,7 @@ public class KinesisProducer implements IKinesisProducer {
         }
 
         @Override
+        @KplTraceLog
         public void onError(final Throwable t) {
             // Don't log error if the user called destroy
             if (!destroyed) {
