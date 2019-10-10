@@ -150,12 +150,7 @@ public class KinesisProducer implements IKinesisProducer {
 
             // Fail all outstanding futures
             for (final Map.Entry<Long, SettableFuture<?>> entry : futures.entrySet()) {
-                callbackCompletionExecutor.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        entry.getValue().setException(t);
-                    }
-                });
+                callbackCompletionExecutor.execute(() -> entry.getValue().setException(t));
             }
             futures.clear();
 
