@@ -772,6 +772,7 @@ public class KinesisProducer implements IKinesisProducer {
      * destroy is unnecessary since it will be done automatically.
      */
     @Override
+    @KplTraceLog
     public void destroy() {
         destroyed = true;
         this.callbackCompletionExecutor.shutdownNow();
@@ -796,6 +797,7 @@ public class KinesisProducer implements IKinesisProducer {
      *             if the child process is dead
      */
     @Override
+    @KplTraceLog
     public void flush(String stream) {
         Flush.Builder f = Flush.newBuilder();
         if (stream != null) {
@@ -824,6 +826,7 @@ public class KinesisProducer implements IKinesisProducer {
      *             if the child process is dead
      */
     @Override
+    @KplTraceLog
     public void flush() {
         flush(null);
     }
@@ -849,6 +852,7 @@ public class KinesisProducer implements IKinesisProducer {
      * @see KinesisProducerConfiguration#setRequestTimeout(long)
      */
     @Override
+    @KplTraceLog
     public void flushSync() {
         while (getOutstandingRecordsCount() > 0) {
             flush();

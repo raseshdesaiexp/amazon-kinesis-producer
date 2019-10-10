@@ -23,6 +23,7 @@ import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.auth.AWSSessionCredentials;
 import com.amazonaws.services.kinesis.producer.protobuf.Messages;
 import com.amazonaws.services.kinesis.producer.protobuf.Messages.Message;
+import com.amazonaws.services.kinesis.producer.util.KplTraceLog;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.SystemUtils;
@@ -54,38 +55,38 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import javax.xml.bind.DatatypeConverter;
 
 /**
- * This class manages the child process. It takes cares of starting the process,
- * connecting to it over TCP, and reading and writing messages from and to it
- * through the socket.
- * 
- * @author chaodeng
+ * This class manages the child process. It takes cares of starting the process, connecting to it over TCP, and reading
+ * and writing messages from and to it through the socket.
  *
+ * @author chaodeng
  */
 public class Daemon {
+
     private static final Logger log = LoggerFactory.getLogger(Daemon.class);
-    
+
     /**
      * Callback interface used by clients to receive messages and errors.
-     * 
-     * @author chaodeng
      *
+     * @author chaodeng
      */
     public static interface MessageHandler {
+
         public void onMessage(Message m);
+
         public void onError(Throwable t);
     }
-    
+
     private BlockingQueue<Message> outgoingMessages = new LinkedBlockingQueue<>();
     private BlockingQueue<Message> incomingMessages = new LinkedBlockingQueue<>();
 
     private ExecutorService executor = Executors
             .newCachedThreadPool(new ThreadFactoryBuilder().setDaemon(true).setNameFormat("kpl-daemon-%04d").build());
-    
+
     private Process process = null;
     private LogInputStreamReader stdOutReader;
     private LogInputStreamReader stdErrReader;
     private AtomicBoolean shutdown = new AtomicBoolean(false);
-    
+
     private File inPipe = null;
     private File outPipe = null;
     private FileChannel inChannel = null;
@@ -94,42 +95,36 @@ public class Daemon {
 
     private ByteBuffer lenBuf = ByteBuffer.allocate(4);
     private ByteBuffer rcvBuf = ByteBuffer.allocate(8 * 1024 * 1024);
-    
+
     private final String pathToExecutable;
     private final MessageHandler handler;
     private final String workingDir;
     private final KinesisProducerConfiguration config;
     private final Map<String, String> environmentVariables;
-    
+
     /**
-     * Starts up the child process, connects to it, and beings sending and
-     * receiving messages.
-     * 
-     * @param pathToExecutable
-     *            Path to the binary that we will use to start up the child.
-     * @param handler
-     *            Message handler that handles messages received from the child.
-     * @param workingDir
-     *            Working directory. The KPL creates FIFO files; it will do so
-     *            in this directory.
-     * @param config
-     *            KPL configuration.
+     * Starts up the child process, connects to it, and beings sending and receiving messages.
+     *
+     * @param pathToExecutable Path to the binary that we will use to start up the child.
+     * @param handler          Message handler that handles messages received from the child.
+     * @param workingDir       Working directory. The KPL creates FIFO files; it will do so in this directory.
+     * @param config           KPL configuration.
      */
     public Daemon(String pathToExecutable, MessageHandler handler, String workingDir,
-            KinesisProducerConfiguration config, Map<String, String> environmentVariables) {
+                  KinesisProducerConfiguration config, Map<String, String> environmentVariables) {
         this.pathToExecutable = pathToExecutable;
         this.handler = handler;
         this.workingDir = workingDir;
         this.config = config;
         this.environmentVariables = environmentVariables;
-        
+
         lenBuf.order(ByteOrder.BIG_ENDIAN);
         rcvBuf.order(ByteOrder.BIG_ENDIAN);
-        
+
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                try{
+                try {
                     createPipes();
                     startChildProcess();
                 } catch (Exception e) {
@@ -138,17 +133,13 @@ public class Daemon {
             }
         });
     }
-    
+
     /**
-     * Connect on existing pipes, without starting a child process. For testing
-     * purposes.
-     * 
-     * @param inPipe
-     *            Pipe from which we read messages from the child.
-     * @param outPipe
-     *            Pipe into which we write messages to the child.
-     * @param handler
-     *            Message handler.
+     * Connect on existing pipes, without starting a child process. For testing purposes.
+     *
+     * @param inPipe  Pipe from which we read messages from the child.
+     * @param outPipe Pipe into which we write messages to the child.
+     * @param handler Message handler.
      */
     protected Daemon(File inPipe, File outPipe, MessageHandler handler) {
         workingDir = ".";
@@ -158,7 +149,7 @@ public class Daemon {
         this.handler = handler;
         this.config = null;
         this.environmentVariables = null;
-        
+
         try {
             connectToChild();
             startLoops();
@@ -173,59 +164,58 @@ public class Daemon {
 
     /**
      * Enqueue a message to be sent to the child process.
-     * 
-     * @param m
      */
+    @KplTraceLog
     public void add(Message m) {
         if (shutdown.get()) {
             throw new DaemonException(
                     "The child process has been shutdown and can no longer accept messages.");
         }
-        
+
         try {
             outgoingMessages.put(m);
         } catch (InterruptedException e) {
             fatalError("Unexpected error", e);
         }
     }
-    
+
     /**
-     * Immediately kills the child process and shuts down the threads in this
-     * Daemon.
+     * Immediately kills the child process and shuts down the threads in this Daemon.
      */
+    @KplTraceLog
     public void destroy() {
         fatalError("Destroy is called", false);
     }
-   
+
     public File getInPipe() {
         return inPipe;
-    }    
+    }
 
     public File getOutPipe() {
         return outPipe;
-    }     
+    }
 
     public String getPathToExecutable() {
         return pathToExecutable;
-    }   
+    }
 
     public MessageHandler getHandler() {
         return handler;
-    }    
+    }
 
     public String getWorkingDir() {
         return workingDir;
     }
-    
+
     public int getQueueSize() {
         return outgoingMessages.size();
     }
-    
+
     /**
-     * Send a message to the child process. If there are no messages available
-     * in the queue, this method blocks until there is one.
+     * Send a message to the child process. If there are no messages available in the queue, this method blocks until
+     * there is one.
      */
-    private void sendMessage()  {
+    private void sendMessage() {
         try {
             Message m = outgoingMessages.take();
             int size = m.getSerializedSize();
@@ -239,11 +229,10 @@ public class Daemon {
             fatalError("Error writing message to daemon", e);
         }
     }
-    
+
     /**
-     * Read a message from the child process off the wire. If there are no bytes
-     * available on the socket, or there if there are not enough bytes to form a
-     * complete message, this method blocks until there is.
+     * Read a message from the child process off the wire. If there are no bytes available on the socket, or there if
+     * there are not enough bytes to form a complete message, this method blocks until there is.
      */
     private void receiveMessage() {
         try {
@@ -252,12 +241,12 @@ public class Daemon {
             int len = rcvBuf.getInt();
             if (len <= 0 || len > rcvBuf.capacity()) {
                 throw new IllegalArgumentException("Invalid message size (" + len +
-                        " bytes, at most " + rcvBuf.capacity() + " supported)");
+                                                   " bytes, at most " + rcvBuf.capacity() + " supported)");
             }
-            
+
             // Read message
             readSome(len);
-            
+
             // Deserialize message and add it to the queue
             Message m = Message.parseFrom(ByteString.copyFrom(rcvBuf));
             incomingMessages.put(m);
@@ -265,10 +254,9 @@ public class Daemon {
             fatalError("Error reading message from daemon", e);
         }
     }
-    
+
     /**
-     * Invokes the message handler, giving it a message received from the child
-     * process.
+     * Invokes the message handler, giving it a message received from the child process.
      */
     private void returnMessage() {
         try {
@@ -284,10 +272,9 @@ public class Daemon {
             fatalError("Unexpected error", e);
         }
     }
-    
+
     /**
-     * Start up the loops that continuously send and receive messages to and
-     * from the child process.
+     * Start up the loops that continuously send and receive messages to and from the child process.
      */
     private void startLoops() {
         executor.execute(new Runnable() {
@@ -298,7 +285,7 @@ public class Daemon {
                 }
             }
         });
-        
+
         executor.execute(new Runnable() {
             @Override
             public void run() {
@@ -307,7 +294,7 @@ public class Daemon {
                 }
             }
         });
-        
+
         executor.execute(new Runnable() {
             @Override
             public void run() {
@@ -316,7 +303,7 @@ public class Daemon {
                 }
             }
         });
-        
+
         executor.execute(new Runnable() {
             @Override
             public void run() {
@@ -344,7 +331,8 @@ public class Daemon {
             }
         });
     }
-    
+
+    @KplTraceLog
     private void connectToChild() throws IOException {
         long start = System.nanoTime();
         while (true) {
@@ -362,83 +350,91 @@ public class Daemon {
                 }
                 try {
                     Thread.sleep(100);
-                } catch (InterruptedException e1) {}
+                } catch (InterruptedException e1) {
+                }
                 if (System.nanoTime() - start > 2e9) {
                     throw e;
                 }
             }
         }
     }
-   
+
     private void createPipes() throws IOException {
         if (SystemUtils.IS_OS_WINDOWS) {
             createPipesWindows();
         } else {
             createPipesUnix();
         }
-        
+
         inPipe.deleteOnExit();
         outPipe.deleteOnExit();
     }
-    
+
     private void createPipesWindows() {
         do {
             inPipe = Paths.get("\\\\.\\pipe\\amz-aws-kpl-in-pipe-" + uuid8Chars()).toFile();
         } while (inPipe.exists());
-        
+
         do {
             outPipe = Paths.get("\\\\.\\pipe\\amz-aws-kpl-out-pipe-" + uuid8Chars()).toFile();
         } while (outPipe.exists());
     }
-    
+
+    @KplTraceLog
     private void createPipesUnix() {
         File dir = new File(this.workingDir);
         if (!dir.exists()) {
             dir.mkdirs();
         }
-        
+
         do {
             inPipe = Paths.get(dir.getAbsolutePath(),
-                    "amz-aws-kpl-in-pipe-" + uuid8Chars()).toFile();
+                               "amz-aws-kpl-in-pipe-" + uuid8Chars()).toFile();
         } while (inPipe.exists());
-        
+
         do {
             outPipe = Paths.get(dir.getAbsolutePath(),
-                    "amz-aws-kpl-out-pipe-" + uuid8Chars()).toFile();
+                                "amz-aws-kpl-out-pipe-" + uuid8Chars()).toFile();
         } while (outPipe.exists());
-        
+
         try {
             Runtime.getRuntime().exec("mkfifo " + inPipe.getAbsolutePath() + " " + outPipe.getAbsolutePath());
         } catch (Exception e) {
             fatalError("Error creating pipes", e, false);
         }
-        
+
         // The files apparently don't always show up immediately after the exec,
         // so we make sure they are there before proceeding
         long start = System.nanoTime();
         while (!inPipe.exists() || !outPipe.exists()) {
             try {
                 Thread.sleep(10);
-            } catch (InterruptedException e) { }
+            } catch (InterruptedException e) {
+            }
             if (System.nanoTime() - start > 15e9) {
                 fatalError("Pipes did not show up after calling mkfifo", false);
             }
         }
     }
-    
+
+    @KplTraceLog
     private void deletePipes() {
         try {
             inChannel.close();
             outChannel.close();
             inPipe.delete();
             outPipe.delete();
-        } catch (Exception e) { }
+        } catch (Exception e) {
+        }
     }
-    
+
+    @KplTraceLog
     private void startChildProcess() throws IOException, InterruptedException {
         List<String> args = new ArrayList<>(Arrays.asList(pathToExecutable, "-o", outPipe.getAbsolutePath(), "-i",
-                inPipe.getAbsolutePath(), "-c", protobufToHex(config.toProtobufMessage()), "-k",
-                protobufToHex(makeSetCredentialsMessage(config.getCredentialsProvider(), false)), "-t"));
+                                                          inPipe.getAbsolutePath(), "-c",
+                                                          protobufToHex(config.toProtobufMessage()), "-k",
+                                                          protobufToHex(makeSetCredentialsMessage(
+                                                                  config.getCredentialsProvider(), false)), "-t"));
 
         AWSCredentialsProvider metricsCreds = config.getMetricsCredentialsProvider();
         if (metricsCreds == null) {
@@ -447,43 +443,35 @@ public class Daemon {
         args.add("-w");
         args.add(protobufToHex(makeSetCredentialsMessage(metricsCreds, true)));
 
-        log.debug("Starting Native Process: {}", StringUtils.join(args, " "));
+        log.info("loggerType=kpl Starting Native Process: {}", StringUtils.join(args, " "));
 
         final ProcessBuilder pb = new ProcessBuilder(args);
         for (Entry<String, String> e : environmentVariables.entrySet()) {
             pb.environment().put(e.getKey(), e.getValue());
         }
 
-
-        executor.execute(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    connectToChild();
-                    startLoops();
-                } catch (IOException e) {
-                    fatalError("Unexpected error connecting to child process", e, false);
-                }
+        executor.execute(() -> {
+            try {
+                connectToChild();
+                startLoops();
+            } catch (IOException e) {
+                log.error(String.format("loggerType=kpl action=exception errorMessage=%s", e.getMessage()), e);
+                fatalError("Unexpected error connecting to child process", e, false);
             }
         });
-        
+
         try {
             process = pb.start();
         } catch (Exception e) {
+            log.error(String.format("loggerType=kpl action=exception errorMessage=%s", e.getMessage()), e);
             fatalError("Error starting child process", e, false);
         }
-        stdOutReader = new LogInputStreamReader(process.getInputStream(), "StdOut", new LogInputStreamReader.DefaultLoggingFunction() {
-            @Override
-            public void apply(Logger logger, String message) {
-                logger.info(message);
-            }
-        });
-        stdErrReader = new LogInputStreamReader(process.getErrorStream(), "StdErr", new LogInputStreamReader.DefaultLoggingFunction() {
-            @Override
-            public void apply(Logger logger, String message) {
-                logger.warn(message);
-            }
-        });
+
+        stdOutReader = new LogInputStreamReader(process.getInputStream(), "StdOut",
+                                                (logger, message) -> logger.info(message));
+
+        stdErrReader = new LogInputStreamReader(process.getErrorStream(), "StdErr",
+                                                (logger, message) -> logger.warn(message));
 
         executor.execute(stdOutReader);
         executor.execute(stdErrReader);
@@ -496,7 +484,7 @@ public class Daemon {
             deletePipes();
         }
     }
-    
+
     private void updateCredentials() throws InterruptedException {
         outgoingMessages.put(makeSetCredentialsMessage(config.getCredentialsProvider(), false));
         AWSCredentialsProvider metricsCreds = config.getMetricsCredentialsProvider();
@@ -505,19 +493,23 @@ public class Daemon {
         }
         outgoingMessages.put(makeSetCredentialsMessage(metricsCreds, true));
     }
-    
+
+    @KplTraceLog
     private void fatalError(String message) {
         fatalError(message, true);
     }
-    
+
+    @KplTraceLog
     private void fatalError(String message, boolean retryable) {
         fatalError(message, null, retryable);
     }
-    
+
+    @KplTraceLog
     private synchronized void fatalError(String message, Throwable t) {
         fatalError(message, t, true);
     }
-    
+
+    @KplTraceLog
     private synchronized void fatalError(String message, Throwable t, boolean retryable) {
         if (!shutdown.getAndSet(true)) {
             if (process != null) {
@@ -531,22 +523,23 @@ public class Daemon {
             }
             try {
                 executor.awaitTermination(1, TimeUnit.SECONDS);
-            } catch (InterruptedException e) { }
+            } catch (InterruptedException e) {
+            }
             executor.shutdownNow();
             if (handler != null) {
                 if (retryable) {
-                    handler.onError(t != null 
-                            ? new RuntimeException(message, t) 
-                            : new RuntimeException(message));
+                    handler.onError(t != null
+                                    ? new RuntimeException(message, t)
+                                    : new RuntimeException(message));
                 } else {
-                    handler.onError(t != null 
-                            ? new IrrecoverableError(message, t) 
-                            : new IrrecoverableError(message));
+                    handler.onError(t != null
+                                    ? new IrrecoverableError(message, t)
+                                    : new IrrecoverableError(message));
                 }
             }
         }
     }
-    
+
     private void readSome(int n) throws IOException {
         rcvBuf.rewind();
         rcvBuf.limit(n);
@@ -561,32 +554,32 @@ public class Daemon {
         }
         rcvBuf.rewind();
     }
-    
+
     private static String uuid8Chars() {
         return UUID.randomUUID().toString().substring(0, 8);
     }
 
     private static Messages.Message makeSetCredentialsMessage(AWSCredentialsProvider provider, boolean forMetrics) {
         AWSCredentials creds = provider.getCredentials();
-        
+
         Messages.Credentials.Builder cb = Messages.Credentials.newBuilder()
                 .setAkid(creds.getAWSAccessKeyId())
                 .setSecretKey(creds.getAWSSecretKey());
         if (creds instanceof AWSSessionCredentials) {
             cb.setToken(((AWSSessionCredentials) creds).getSessionToken());
         }
-   
+
         Messages.SetCredentials setCreds = Messages.SetCredentials.newBuilder()
                 .setCredentials(cb.build())
                 .setForMetrics(forMetrics)
                 .build();
-        
+
         return Messages.Message.newBuilder()
-            .setSetCredentials(setCreds)
-            .setId(Long.MAX_VALUE)
-            .build();
+                .setSetCredentials(setCreds)
+                .setId(Long.MAX_VALUE)
+                .build();
     }
-    
+
     private static String protobufToHex(com.google.protobuf.Message msg) {
         return DatatypeConverter.printHexBinary(msg.toByteArray());
     }
