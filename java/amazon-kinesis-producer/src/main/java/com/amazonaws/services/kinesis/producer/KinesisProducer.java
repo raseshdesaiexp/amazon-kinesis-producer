@@ -143,8 +143,10 @@ public class KinesisProducer implements IKinesisProducer {
         @Override
         @KplTraceLog
         public void onError(final Throwable t) {
+            log.info("loggerType=kplError methodName=onError action=begin");
             // Don't log error if the user called destroy
             if (!destroyed) {
+                log.info("loggerType=kplError methodName=onError action=notDestroyed");
                 log.error("Error in child process", t);
             }
 
@@ -155,6 +157,7 @@ public class KinesisProducer implements IKinesisProducer {
             futures.clear();
 
             if (processFailureBehavior == ProcessFailureBehavior.AutoRestart && !destroyed) {
+                log.info("loggerType=kplError methodName=onError action=restartChild1");
                 log.info("Restarting native producer process.");
                 child = new Daemon(pathToExecutable, new MessageHandler(), pathToTmpDir, config, env);
             } else {
@@ -163,6 +166,7 @@ public class KinesisProducer implements IKinesisProducer {
                 // creation. If the child process crashes almost immediately, we're
                 // going to abort to avoid going into a loop.
                 if (!(t instanceof IrrecoverableError) && System.nanoTime() - lastChild > 3e9) {
+                    log.info("loggerType=kplError methodName=onError action=restartChild2");
                     lastChild = System.nanoTime();
                     child = new Daemon(pathToExecutable, new MessageHandler(), pathToTmpDir, config, env);
                 }

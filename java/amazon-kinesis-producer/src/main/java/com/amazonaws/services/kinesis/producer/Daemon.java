@@ -73,6 +73,7 @@ public class Daemon {
 
         public void onMessage(Message m);
 
+        @KplTraceLog
         public void onError(Throwable t);
     }
 
@@ -216,6 +217,7 @@ public class Daemon {
      * there is one.
      */
     private void sendMessage() {
+        String kplErrorText = "Error writing message to daemon";
         try {
             Message m = outgoingMessages.take();
             int size = m.getSerializedSize();
@@ -225,8 +227,12 @@ public class Daemon {
             outChannel.write(lenBuf);
             m.writeTo(outStream);
             outStream.flush();
-        } catch (IOException | InterruptedException e) {
-            fatalError("Error writing message to daemon", e);
+        } catch (IOException ioe) {
+            logError(ioe, "ioException", kplErrorText, "sendMessage", "all");
+            fatalError(kplErrorText, ioe);
+        } catch (InterruptedException ie) {
+            logError(ie, "interruptedException", kplErrorText, "sendMessage", "all");
+            fatalError(kplErrorText, ie);
         }
     }
 
@@ -235,6 +241,7 @@ public class Daemon {
      * there are not enough bytes to form a complete message, this method blocks until there is.
      */
     private void receiveMessage() {
+        String kplErrorText = "Error reading message from daemon";
         try {
             // Read message length (4 bytes)
             readSome(4);
@@ -250,8 +257,12 @@ public class Daemon {
             // Deserialize message and add it to the queue
             Message m = Message.parseFrom(ByteString.copyFrom(rcvBuf));
             incomingMessages.put(m);
-        } catch (IOException | InterruptedException e) {
-            fatalError("Error reading message from daemon", e);
+        } catch (IOException ioe) {
+            logError(ioe, "ioException", kplErrorText, "receiveMessage", "all");
+            fatalError(kplErrorText, ioe);
+        } catch (InterruptedException ie) {
+            logError(ie, "interruptedException", kplErrorText, "receiveMessage", "all");
+            fatalError(kplErrorText, ie);
         }
     }
 
@@ -259,6 +270,7 @@ public class Daemon {
      * Invokes the message handler, giving it a message received from the child process.
      */
     private void returnMessage() {
+        String kplErrorText = "Unexpected error";
         try {
             Message m = incomingMessages.take();
             if (handler != null) {
@@ -268,8 +280,9 @@ public class Daemon {
                     log.error("Error in message handler", e);
                 }
             }
-        } catch (InterruptedException e) {
-            fatalError("Unexpected error", e);
+        } catch (InterruptedException ie) {
+            logError(ie, "interruptedException", kplErrorText, "returnMessage", "all");
+            fatalError(kplErrorText, ie);
         }
     }
 
@@ -332,28 +345,44 @@ public class Daemon {
         });
     }
 
+    private void logError(Throwable e, String errorType, String kplErrorText, String methodName, String action) {
+        log.error(String.format("loggerType=kplError errorType=%s errorMessage=%s kplErrorText=%s methodName=%s " +
+                                "action=%s", errorType, e.getMessage(), kplErrorText, methodName, action), e);
+    }
+
     @KplTraceLog
     private void connectToChild() throws IOException {
         long start = System.nanoTime();
         while (true) {
+            log.info("loggerType=kplError methodName=connectToChild action=begin");
             try {
                 inChannel = FileChannel.open(Paths.get(inPipe.getAbsolutePath()), StandardOpenOption.READ);
+                log.info("loggerType=kplError methodName=connectToChild action=inChannelCreated");
                 outChannel = FileChannel.open(Paths.get(outPipe.getAbsolutePath()), StandardOpenOption.WRITE);
+                log.info("loggerType=kplError methodName=connectToChild action=outChannelCreated");
                 outStream = Channels.newOutputStream(outChannel);
+                log.info("loggerType=kplError methodName=connectToChild action=outStreamCreated");
                 break;
-            } catch (IOException e) {
+            } catch (IOException ioe) {
+                logError(ioe, "ioException", "None", "connectToChild", "all");
                 if (inChannel != null && inChannel.isOpen()) {
+                    log.info("loggerType=kplError methodName=connectToChild action=ioExceptionClosingInChannel");
                     inChannel.close();
                 }
                 if (outChannel != null && outChannel.isOpen()) {
+                    log.info("loggerType=kplError methodName=connectToChild action=ioExceptionClosingOutChannel");
                     outChannel.close();
                 }
                 try {
+                    log.info("loggerType=kplError methodName=connectToChild action=ioExceptionBeginWaiting");
                     Thread.sleep(100);
-                } catch (InterruptedException e1) {
+                    log.info("loggerType=kplError methodName=connectToChild action=ioExceptionDoneWaiting");
+                } catch (InterruptedException ie) {
+                    log.info("loggerType=kplError methodName=connectToChild action=ioExceptionIgnoringWaitInterrupt");
                 }
                 if (System.nanoTime() - start > 2e9) {
-                    throw e;
+                    log.info("loggerType=kplError methodName=connectToChild action=givingUp");
+                    throw ioe;
                 }
             }
         }
@@ -384,23 +413,39 @@ public class Daemon {
     private void createPipesUnix() {
         File dir = new File(this.workingDir);
         if (!dir.exists()) {
-            dir.mkdirs();
+            try {
+                log.info("loggerType=kplError methodName=createPipesUnix action=mkdirs");
+                dir.mkdirs();
+            } catch (Exception e) {
+                logError(e, "exception", "None", "createPipesUnix", "mkdirs");
+            }
         }
 
         do {
-            inPipe = Paths.get(dir.getAbsolutePath(),
-                               "amz-aws-kpl-in-pipe-" + uuid8Chars()).toFile();
+            try {
+                log.info("loggerType=kplError methodName=createPipesUnix action=getInPipe");
+                inPipe = Paths.get(dir.getAbsolutePath(), "amz-aws-kpl-in-pipe-" + uuid8Chars()).toFile();
+            } catch (Exception e) {
+                logError(e, "exception", "None", "createPipesUnix", "getInPipe");
+            }
         } while (inPipe.exists());
 
         do {
-            outPipe = Paths.get(dir.getAbsolutePath(),
-                                "amz-aws-kpl-out-pipe-" + uuid8Chars()).toFile();
+            try {
+                log.info("loggerType=kplError methodName=createPipesUnix action=getOutPipe");
+                outPipe = Paths.get(dir.getAbsolutePath(), "amz-aws-kpl-out-pipe-" + uuid8Chars()).toFile();
+            } catch (Exception e) {
+                logError(e, "exception", "None", "createPipesUnix", "getOutPipe");
+            }
         } while (outPipe.exists());
 
         try {
+            log.info("loggerType=kplError methodName=createPipesUnix action=runMkFifo");
             Runtime.getRuntime().exec("mkfifo " + inPipe.getAbsolutePath() + " " + outPipe.getAbsolutePath());
         } catch (Exception e) {
-            fatalError("Error creating pipes", e, false);
+            String kplErrorTextMkFifo = "Error creating pipes";
+            logError(e, "exception", kplErrorTextMkFifo, "createPipesUnix", "runMkFifo");
+            fatalError(kplErrorTextMkFifo, e, false);
         }
 
         // The files apparently don't always show up immediately after the exec,
@@ -408,10 +453,14 @@ public class Daemon {
         long start = System.nanoTime();
         while (!inPipe.exists() || !outPipe.exists()) {
             try {
+                log.info("loggerType=kplError methodName=createPipesUnix action=WaitingForInOutPipeToExist");
                 Thread.sleep(10);
             } catch (InterruptedException e) {
+                log.info("loggerType=kplError methodName=createPipesUnix " +
+                         "action=IgnoreInterruptWhileWaitingForInOutFileToExist");
             }
             if (System.nanoTime() - start > 15e9) {
+                log.info("loggerType=kplError methodName=createPipesUnix action=GivingUpCreatingInOutPipe");
                 fatalError("Pipes did not show up after calling mkfifo", false);
             }
         }
@@ -425,6 +474,7 @@ public class Daemon {
             inPipe.delete();
             outPipe.delete();
         } catch (Exception e) {
+            logError(e, "exception", "None", "deletePipes", "all");
         }
     }
 
@@ -455,16 +505,18 @@ public class Daemon {
                 connectToChild();
                 startLoops();
             } catch (IOException e) {
-                log.error(String.format("loggerType=kpl action=exception errorMessage=%s", e.getMessage()), e);
-                fatalError("Unexpected error connecting to child process", e, false);
+                String kplErrorText = "Unexpected error connecting to child process";
+                logError(e, "ioException", kplErrorText, "startChildProcess", "connectToChildAndStartLoops");
+                fatalError(kplErrorText, e, false);
             }
         });
 
         try {
             process = pb.start();
         } catch (Exception e) {
-            log.error(String.format("loggerType=kpl action=exception errorMessage=%s", e.getMessage()), e);
-            fatalError("Error starting child process", e, false);
+            String kplErrorText = "Error starting child process";
+            logError(e, "exception", kplErrorText, "startChildProcess", "startProcess");
+            fatalError(kplErrorText, e, false);
         }
 
         stdOutReader = new LogInputStreamReader(process.getInputStream(), "StdOut",
@@ -477,6 +529,8 @@ public class Daemon {
         executor.execute(stdErrReader);
         try {
             int code = process.waitFor();
+            log.info("loggerType=kplError methodName=startChildProcess action=waitingForChildProcessToDie " +
+                     "exitCode={}}", code);
             fatalError("Child process exited with code " + code, code != 1);
         } finally {
             stdOutReader.shutdown();
@@ -511,8 +565,10 @@ public class Daemon {
 
     @KplTraceLog
     private synchronized void fatalError(String message, Throwable t, boolean retryable) {
+        logError(t, "throwable", "None", "fatalError", "all");
         if (!shutdown.getAndSet(true)) {
             if (process != null) {
+                log.info("loggerType=kplError methodName=fatalError action=destroyProcess");
                 if (stdErrReader != null) {
                     stdErrReader.prepareForShutdown();
                 }
@@ -524,14 +580,18 @@ public class Daemon {
             try {
                 executor.awaitTermination(1, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
+                log.info("loggerType=kplError methodName=fatalError " +
+                         "action=ignoreInterruptWaitingForExecutorToTerminate");
             }
             executor.shutdownNow();
             if (handler != null) {
                 if (retryable) {
+                    log.info("loggerType=kplError methodName=fatalError action=callHandleRetryableError");
                     handler.onError(t != null
                                     ? new RuntimeException(message, t)
                                     : new RuntimeException(message));
                 } else {
+                    log.info("loggerType=kplError methodName=fatalError action=callHandleIrrecoverableError");
                     handler.onError(t != null
                                     ? new IrrecoverableError(message, t)
                                     : new IrrecoverableError(message));
