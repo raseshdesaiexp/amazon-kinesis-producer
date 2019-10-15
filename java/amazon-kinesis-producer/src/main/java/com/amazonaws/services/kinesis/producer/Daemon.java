@@ -122,15 +122,12 @@ public class Daemon {
         lenBuf.order(ByteOrder.BIG_ENDIAN);
         rcvBuf.order(ByteOrder.BIG_ENDIAN);
 
-        executor.execute(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    createPipes();
-                    startChildProcess();
-                } catch (Exception e) {
-                    fatalError("Error running child process", e);
-                }
+        executor.execute(() -> {
+            try {
+                createPipes();
+                startChildProcess();
+            } catch (Exception e) {
+                fatalError("Error running child process", e);
             }
         });
     }
@@ -347,7 +344,8 @@ public class Daemon {
 
     private void logError(Throwable e, String errorType, String kplErrorText, String methodName, String action) {
         log.error(String.format("loggerType=kplError errorType=%s errorMessage=%s kplErrorText=%s methodName=%s " +
-                                "action=%s", errorType, e.getMessage(), kplErrorText, methodName, action), e);
+                                "action=%s", errorType, e != null ? e.getMessage() : "None", kplErrorText, methodName,
+                                action), e);
     }
 
     @KplTraceLog
@@ -530,7 +528,7 @@ public class Daemon {
         try {
             int code = process.waitFor();
             log.info("loggerType=kplError methodName=startChildProcess action=waitingForChildProcessToDie " +
-                     "exitCode={}}", code);
+                     "exitCode={}", code);
             fatalError("Child process exited with code " + code, code != 1);
         } finally {
             stdOutReader.shutdown();
@@ -540,12 +538,16 @@ public class Daemon {
     }
 
     private void updateCredentials() throws InterruptedException {
-        outgoingMessages.put(makeSetCredentialsMessage(config.getCredentialsProvider(), false));
-        AWSCredentialsProvider metricsCreds = config.getMetricsCredentialsProvider();
-        if (metricsCreds == null) {
-            metricsCreds = config.getCredentialsProvider();
+        try {
+            outgoingMessages.put(makeSetCredentialsMessage(config.getCredentialsProvider(), false));
+            AWSCredentialsProvider metricsCreds = config.getMetricsCredentialsProvider();
+            if (metricsCreds == null) {
+                metricsCreds = config.getCredentialsProvider();
+            }
+            outgoingMessages.put(makeSetCredentialsMessage(metricsCreds, true));
+        } catch (Exception e) {
+            logError(e, "exception", "None", "updateCredentials", "catch");
         }
-        outgoingMessages.put(makeSetCredentialsMessage(metricsCreds, true));
     }
 
     @KplTraceLog
